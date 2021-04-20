@@ -84,7 +84,10 @@ class GenericSolveBlock(Block):
         for bc in self.bcs:
             if isinstance(bc, self.backend.DirichletBC):
                 bc = self.compat.create_bc(bc, homogenize=True)
+            elif isinstance(bc, self.backend.EquationBC):
+                bc = bc.extract_form('J') #.reconstruct(V = None, subu = None, u = None, field = None)
             bcs.append(bc)
+            import ipdb; ipdb.set_trace()
         return bcs
 
     def _create_initial_guess(self):
@@ -95,8 +98,7 @@ class GenericSolveBlock(Block):
         for block_variable in self.get_dependencies():
             c = block_variable.output
             c_rep = block_variable.saved_output
-
-            if isinstance(c, self.backend.DirichletBC):
+            if isinstance(c, (self.backend.DirichletBC, self.backend.EquationBC)):
                 bcs.append(c_rep)
         return bcs
 
@@ -120,15 +122,17 @@ class GenericSolveBlock(Block):
         return ufl.replace(form, replace_map)
 
     def _should_compute_boundary_adjoint(self, relevant_dependencies):
+
         # Check if DirichletBC derivative is relevant
         bdy = False
         for _, dep in relevant_dependencies:
-            if isinstance(dep.output, self.backend.DirichletBC):
+            if isinstance(dep.output, (self.backend.DirichletBC, self.backend.EquationBC)):
                 bdy = True
                 break
         return bdy
 
     def prepare_evaluate_adj(self, inputs, adj_inputs, relevant_dependencies):
+        import ipdb; ipdb.set_trace()        
         fwd_block_variable = self.get_outputs()[0]
         u = fwd_block_variable.output
 
@@ -157,6 +161,7 @@ class GenericSolveBlock(Block):
         return r
 
     def _assemble_and_solve_adj_eq(self, dFdu_adj_form, dJdu, compute_bdy):
+        import ipdb; ipdb.set_trace()        
         dJdu_copy = dJdu.copy()
         kwargs = self.assemble_kwargs.copy()
         # Homogenize and apply boundary conditions on adj_dFdu and dJdu.
@@ -165,7 +170,8 @@ class GenericSolveBlock(Block):
         dFdu = self.compat.assemble_adjoint_value(dFdu_adj_form, **kwargs)
 
         for bc in bcs:
-            bc.apply(dJdu)
+            if isinstance(bc, self.backend.DirichletBC):
+                bc.apply(dJdu)
 
         adj_sol = self.compat.create_function(self.function_space)
         self.compat.linalg_solve(dFdu, adj_sol.vector(), dJdu, *self.adj_args, **self.adj_kwargs)
@@ -179,6 +185,7 @@ class GenericSolveBlock(Block):
         return adj_sol, adj_sol_bdy
 
     def evaluate_adj_component(self, inputs, adj_inputs, block_variable, idx, prepared=None):
+        import ipdb; ipdb.set_trace()
         if not self.linear and self.func == block_variable.output:
             # We are not able to calculate derivatives wrt initial guess.
             return None
@@ -197,7 +204,7 @@ class GenericSolveBlock(Block):
             mesh = F_form.ufl_domain().ufl_cargo()
             c_fs = c._ad_function_space(mesh)
             trial_function = self.backend.TrialFunction(c_fs)
-        elif isinstance(c, self.backend.DirichletBC):
+        elif isinstance(c, (self.backend.DirichletBC, self.backend.EquationBC)):
             tmp_bc = self.compat.create_bc(c, value=self.compat.extract_subfunction(adj_sol_bdy, c.function_space()))
             return [tmp_bc]
         elif isinstance(c, self.compat.MeshType):
@@ -236,6 +243,7 @@ class GenericSolveBlock(Block):
         }
 
     def evaluate_tlm_component(self, inputs, tlm_inputs, block_variable, idx, prepared=None):
+
         F_form = prepared["form"]
         dFdu = prepared["dFdu"]
         V = self.get_outputs()[idx].output.function_space()
@@ -247,7 +255,7 @@ class GenericSolveBlock(Block):
             c = block_variable.output
             c_rep = block_variable.saved_output
 
-            if isinstance(c, self.backend.DirichletBC):
+            if isinstance(c, (self.backend.DirichletBC, self.backend.EquationBC)):
                 if tlm_value is None:
                     bcs.append(self.compat.create_bc(c, homogenize=True))
                 else:
@@ -301,7 +309,7 @@ class GenericSolveBlock(Block):
                     self.backend.derivative(dFdu_adj, X, tlm_input))
                 if len(d2Fdudm.integrals()) > 0:
                     b_form += d2Fdudm
-            elif not isinstance(c, self.backend.DirichletBC):
+            elif not isinstance(c, (self.backend.DirichletBC, self.backend.EquationBC)):
                 dFdu_adj = self.backend.action(self.backend.adjoint(dFdu_form), adj_sol)
                 b_form += self.backend.derivative(dFdu_adj, c_rep, tlm_input)
 
@@ -355,6 +363,7 @@ class GenericSolveBlock(Block):
 
     def evaluate_hessian_component(self, inputs, hessian_inputs, adj_inputs, block_variable, idx,
                                    relevant_dependencies, prepared=None):
+
         c = block_variable.output
         if c == self.func and not self.linear:
             return None
@@ -370,7 +379,8 @@ class GenericSolveBlock(Block):
 
         # If m = DirichletBC then d^2F(u,m)/dm^2 = 0 and d^2F(u,m)/dudm = 0,
         # so we only have the term dF(u,m)/dm * adj_sol2
-        if isinstance(c, self.backend.DirichletBC):
+        import ipdb; ipdb.set_trace()
+        if isinstance(c, (self.backend.DirichletBC, self.backend.EquationBC)):
             tmp_bc = self.compat.create_bc(c, value=self.compat.extract_subfunction(adj_sol2_bdy, c.function_space()))
             return [tmp_bc]
 
@@ -408,7 +418,7 @@ class GenericSolveBlock(Block):
             c2 = bv.output
             c2_rep = bv.saved_output
 
-            if isinstance(c2, self.backend.DirichletBC):
+            if isinstance(c2, (self.backend.DirichletBC, self.backend.EquationBC)):
                 continue
 
             tlm_input = bv.tlm_value
@@ -439,15 +449,33 @@ class GenericSolveBlock(Block):
         return self._replace_recompute_form()
 
     def _replace_recompute_form(self):
+
         func = self._create_initial_guess()
 
         bcs = self._recover_bcs()
+        bcs_new = []
+        for bc in bcs:
+            if isinstance(bc, self.backend.EquationBC):
+                bc_lhs = self._replace_form(bc.eq.lhs, func=func)
+                if bc.is_linear:
+                    bc_rhs = self._replace_form(bc.eq.rhs, func=func)
+                else:
+                    bc_rhs = bc.eq.rhs
+                bbcs = []
+                for block_variable in bc.block.get_dependencies():
+                    c = block_variable.output
+                    c_rep = block_variable.saved_output
+                    if isinstance(c, (self.backend.DirichletBC)):
+                        bbcs.append(c_rep)                
+                bcs_new.append(self.backend.EquationBC(bc_lhs == bc_rhs, func, bc.sub_domain, bcs = bbcs))
+            else:
+                bcs_new.append(bc)
         lhs = self._replace_form(self.lhs, func=func)
         rhs = 0
         if self.linear:
             rhs = self._replace_form(self.rhs)
 
-        return lhs, rhs, func, bcs
+        return lhs, rhs, func, bcs_new
 
     def _forward_solve(self, lhs, rhs, func, bcs):
         self.backend.solve(lhs == rhs, func, bcs, *self.forward_args, **self.forward_kwargs)
