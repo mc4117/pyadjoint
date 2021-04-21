@@ -87,6 +87,13 @@ class GenericSolveBlock(Block):
                 bcs.append(bc)
             elif isinstance(bc, self.backend.EquationBC):
                 bcs = tuple(bc.extract_form('J'))
+                bcs_list = []
+                for i in bcs:
+                    if isinstance(i, self.backend.DirichletBC):
+                        bcs_list.append(self.compat.create_bc(i, homogenize=True))
+                    else:
+                        bcs_list.append(i)
+                bcs = tuple(bcs_list)
         return bcs
 
     def _create_initial_guess(self):
@@ -169,7 +176,6 @@ class GenericSolveBlock(Block):
         for bc in bcs:
             if isinstance(bc, self.backend.DirichletBC):
                 bc.apply(dJdu)
-            #elif isinstance(bc, self.backend.EquationBC):   
 
         adj_sol = self.compat.create_function(self.function_space)
         self.compat.linalg_solve(dFdu, adj_sol.vector(), dJdu, *self.adj_args, **self.adj_kwargs)
@@ -186,6 +192,7 @@ class GenericSolveBlock(Block):
         if not self.linear and self.func == block_variable.output:
             # We are not able to calculate derivatives wrt initial guess.
             return None
+
         F_form = prepared["form"]
         adj_sol = prepared["adj_sol"]
         adj_sol_bdy = prepared["adj_sol_bdy"]
@@ -201,7 +208,7 @@ class GenericSolveBlock(Block):
             mesh = F_form.ufl_domain().ufl_cargo()
             c_fs = c._ad_function_space(mesh)
             trial_function = self.backend.TrialFunction(c_fs)
-        elif isinstance(c, (self.backend.DirichletBC, self.backend.EquationBC)):
+        elif isinstance(c, self.backend.DirichletBC):
             tmp_bc = self.compat.create_bc(c, value=self.compat.extract_subfunction(adj_sol_bdy, c.function_space()))
             return [tmp_bc]
         elif isinstance(c, self.compat.MeshType):
@@ -307,6 +314,7 @@ class GenericSolveBlock(Block):
                 if len(d2Fdudm.integrals()) > 0:
                     b_form += d2Fdudm
             elif not isinstance(c, (self.backend.DirichletBC, self.backend.EquationBC)):
+                import ipdb; ipdb.set_trace()
                 dFdu_adj = self.backend.action(self.backend.adjoint(dFdu_form), adj_sol)
                 b_form += self.backend.derivative(dFdu_adj, c_rep, tlm_input)
 
@@ -376,7 +384,8 @@ class GenericSolveBlock(Block):
 
         # If m = DirichletBC then d^2F(u,m)/dm^2 = 0 and d^2F(u,m)/dudm = 0,
         # so we only have the term dF(u,m)/dm * adj_sol2
-        if isinstance(c, (self.backend.DirichletBC, self.backend.EquationBC)):
+        import ipdb; ipdb.set_trace()
+        if isinstance(c, self.backend.DirichletBC):
             tmp_bc = self.compat.create_bc(c, value=self.compat.extract_subfunction(adj_sol2_bdy, c.function_space()))
             return [tmp_bc]
 
