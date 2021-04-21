@@ -42,7 +42,6 @@ def compat(backend):
             One cannot provide both ``value`` and ``homogenize``, but
             should provide at least one.
             """
-            import ipdb; ipdb.set_trace()
             if value is None and homogenize is None:
                 raise ValueError("No point cloning a bc if you're not changing its values")
             if value is not None and homogenize is not None:

@@ -79,15 +79,14 @@ class GenericSolveBlock(Block):
         replace_map[tmp_u] = self.get_outputs()[0].saved_output
         return ufl.replace(F_form, replace_map)
 
-    def _homogenize_bcs(self):
+    def _process_bcs(self):
         bcs = []
         for bc in self.bcs:
             if isinstance(bc, self.backend.DirichletBC):
                 bc = self.compat.create_bc(bc, homogenize=True)
+                bcs.append(bc)
             elif isinstance(bc, self.backend.EquationBC):
-                bc = bc.extract_form('J') #.reconstruct(V = None, subu = None, u = None, field = None)
-            bcs.append(bc)
-            import ipdb; ipdb.set_trace()
+                bcs = tuple(bc.extract_form('J'))
         return bcs
 
     def _create_initial_guess(self):
@@ -132,7 +131,6 @@ class GenericSolveBlock(Block):
         return bdy
 
     def prepare_evaluate_adj(self, inputs, adj_inputs, relevant_dependencies):
-        import ipdb; ipdb.set_trace()        
         fwd_block_variable = self.get_outputs()[0]
         u = fwd_block_variable.output
 
@@ -161,17 +159,17 @@ class GenericSolveBlock(Block):
         return r
 
     def _assemble_and_solve_adj_eq(self, dFdu_adj_form, dJdu, compute_bdy):
-        import ipdb; ipdb.set_trace()        
         dJdu_copy = dJdu.copy()
         kwargs = self.assemble_kwargs.copy()
         # Homogenize and apply boundary conditions on adj_dFdu and dJdu.
-        bcs = self._homogenize_bcs()
+        bcs = self._process_bcs()
         kwargs["bcs"] = bcs
         dFdu = self.compat.assemble_adjoint_value(dFdu_adj_form, **kwargs)
 
         for bc in bcs:
             if isinstance(bc, self.backend.DirichletBC):
                 bc.apply(dJdu)
+            #elif isinstance(bc, self.backend.EquationBC):   
 
         adj_sol = self.compat.create_function(self.function_space)
         self.compat.linalg_solve(dFdu, adj_sol.vector(), dJdu, *self.adj_args, **self.adj_kwargs)
@@ -185,7 +183,6 @@ class GenericSolveBlock(Block):
         return adj_sol, adj_sol_bdy
 
     def evaluate_adj_component(self, inputs, adj_inputs, block_variable, idx, prepared=None):
-        import ipdb; ipdb.set_trace()
         if not self.linear and self.func == block_variable.output:
             # We are not able to calculate derivatives wrt initial guess.
             return None
@@ -379,7 +376,6 @@ class GenericSolveBlock(Block):
 
         # If m = DirichletBC then d^2F(u,m)/dm^2 = 0 and d^2F(u,m)/dudm = 0,
         # so we only have the term dF(u,m)/dm * adj_sol2
-        import ipdb; ipdb.set_trace()
         if isinstance(c, (self.backend.DirichletBC, self.backend.EquationBC)):
             tmp_bc = self.compat.create_bc(c, value=self.compat.extract_subfunction(adj_sol2_bdy, c.function_space()))
             return [tmp_bc]

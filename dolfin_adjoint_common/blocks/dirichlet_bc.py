@@ -27,6 +27,7 @@ class DirichletBCBlock(Block):
             pass
 
     def evaluate_adj_component(self, inputs, adj_inputs, block_variable, idx, prepared=None):
+        import ipdb; ipdb.set_trace()
         bc = self.get_outputs()[0].saved_output
         c = block_variable.output
         adj_inputs = adj_inputs[0]

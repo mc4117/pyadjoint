@@ -133,6 +133,7 @@ class ReducedFunctional(object):
             with stop_annotating():
                 for i in range(len(blocks)):
                     blocks[i].recompute()
+
         func_value = self.scale * self.functional.block_variable.checkpoint
 
         # Call callback
