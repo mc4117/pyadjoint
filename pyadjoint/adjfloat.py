@@ -92,7 +92,14 @@ class AdjFloat(OverloadedType, float):
         return PowBlock(self, power)
 
     def _ad_convert_type(self, value, options={}):
-        return AdjFloat(value)
+        from firedrake import Vector, Function
+        if type(value) is Vector or Function:
+            if hasattr(value, "dat"):
+                return AdjFloat(value.dat.data[:])
+            else:
+                return AdjFloat(value)
+        else:
+            return AdjFloat(value)
 
     def adj_update_value(self, value):
         self.original_block_variable.checkpoint = value
@@ -377,7 +384,11 @@ class MulBlock(FloatOperatorBlock):
 
     def evaluate_adj_component(self, inputs, adj_inputs, block_variable, idx, prepared=None):
         other_idx = 0 if idx == 1 else 1
-        return float.__mul__(adj_inputs[0], inputs[other_idx])
+        from firedrake.vector import Vector
+        if type(adj_inputs[0]) is Vector:
+            return float.__mul__(adj_inputs[0].dat.data[0], inputs[other_idx])
+        else:
+            return float.__mul__(adj_inputs[0], inputs[other_idx])
 
     def evaluate_tlm_component(self, inputs, tlm_inputs, block_variable, idx, prepared=None):
         tlm_output = 0.
@@ -407,10 +418,17 @@ class DivBlock(FloatOperatorBlock):
 
     def evaluate_adj_component(self, inputs, adj_inputs, block_variable, idx, prepared=None):
         if idx == 0:
-            return float.__mul__(
-                adj_inputs[0],
-                float.__truediv__(1., inputs[1])
-            )
+            from firedrake.vector import Vector
+            if type(adj_inputs[0]) is Vector:
+                return float.__mul__(
+                    adj_inputs[0].dat.data[0],
+                    float.__truediv__(1., inputs[1])
+                )
+            else:
+                return float.__mul__(
+                    adj_inputs[0],
+                    float.__truediv__(1., inputs[1])
+                )
         else:
             return float.__mul__(
                 adj_inputs[0],
